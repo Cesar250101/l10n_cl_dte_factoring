@@ -67,7 +67,7 @@ class CesionDTE(models.Model):
     )
 
     def _get_xsd_types(self):
-        xsd_types = super(InvoiceDTE, self)._get_xsd_types()
+        xsd_types = super(CesionDTE, self)._get_xsd_types()
         xsd_types.update({
             'aec': 'AEC_v10.xsd',
             'dte_ced': 'DTECedido_v10.xsd',
@@ -126,7 +126,7 @@ version="1.0">
         if type in ['aec']:
             fulldoc = self.create_template_doc1(message, msg)
             return fulldoc
-        return super(InvoiceDTE, self)._append_sig(type, msg, message)
+        return super(CesionDTE, self)._append_sig(type, msg, message)
 
     @api.multi
     def get_cesion_xml_file(self):
