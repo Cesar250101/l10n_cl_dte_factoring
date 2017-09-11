@@ -399,7 +399,7 @@ class CesionDTEAR(models.Model):
     name = fields.Char(
         string='File Name',
     )
-    img = fields.Binary(
+    image = fields.Binary(
         string='Imagen',
         filters='*.pdf,*.png, *.jpg',
         store=True,

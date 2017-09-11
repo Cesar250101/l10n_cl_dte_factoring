@@ -16,7 +16,7 @@
                             <field name='sii_cesion_result' widget="statusbar"/>
                         </header>
                         <group>
-                            <field name='cesionario' />
+                            <field name='cesionario_id' />
                             <field name='cesion_number'  />
                             <field name='declaracion_jurada'  />
                             <field name="imagen_ar_ids" editable="bottom" widget="one2many">

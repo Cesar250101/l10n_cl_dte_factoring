@@ -14,8 +14,7 @@ Chile: Cesión de Documentos Tributarios.
 """,
     'depends': [
         'l10n_cl_dte',
-        ],
-    },
+    ],
     'data': [
         'views/invoice_view.xml',
         #'views/partner_view.xml',
