@@ -7,19 +7,19 @@
             <field name="inherit_id" ref="account.invoice_form" />
             <field name="arch" type="xml">
                 <notebook>
-                    <page string="Cesión de Documento" name="cesion_invoice"  attrs="{'invisible':[('sii_result', '=', '')]}">
+                    <page string="Cesión de Documento" name="cesion_invoice"  attrs="{'invisible':[('sii_result', 'not in', ['Proceso'])]}">
                         <header>
-                            <button string="Validar Cesión" type="object"  name="validate_cesion"  attrs="{'invisible':[('state', 'in', ['draft'])]}"/>
-                            <button string="Download XML" type="object"  name="get_cesion_xml_file"  attrs="{'invisible':[('state', 'in', ['draft'])]}"/>
-                            <button string="Send XML Cesion" type="object" class="oe_highlight" name="do_cesion_dte_send" attrs="{'invisible': ['|', ('state', 'in', ['draft']),('sii_result', 'not in', ['','NoEnviado','Rechazado'])]}"/>
-                            <button string="Ask for DTE Cesion" type="object" class="oe_highlight" name="ask_for_cesion_dte_status" attrs="{'invisible':['|', ('state', 'in', ['draft']),('sii_result','in',['','NoEnviado'])]}"/>
+                            <button string="Validar Cesión" type="object" name="validate_cesion"  attrs="{'invisible':[('sii_cesion_result', 'in', ['draft'])]}"/>
+                            <button string="Download XML" type="object" name="get_cesion_xml_file"  attrs="{'invisible':[('sii_cesion_result', 'in', ['draft'])]}"/>
+                            <button string="Send XML Cesion" type="object" class="oe_highlight" name="do_cesion_dte_send" attrs="{'invisible': ['|', ('sii_cesion_result', 'in', ['draft']),('sii_result', 'not in', ['','NoEnviado','Rechazado'])]}"/>
+                            <button string="Ask for DTE Cesion" type="object" class="oe_highlight" name="ask_for_cesion_dte_status" attrs="{'invisible':['|', ('sii_cesion_result', 'in', ['draft']),('sii_cesion_result','in',['','NoEnviado'])]}"/>
                             <field name='sii_cesion_result' widget="statusbar"/>
                         </header>
                         <group>
-                            <field name='cesionario_id' />
-                            <field name='cesion_number'  />
-                            <field name='declaracion_jurada'  />
-                            <field name="imagen_ar_ids" editable="bottom" widget="one2many">
+                            <field name='cesionario_id' attrs="{'readonly':[('sii_cesion_result', 'not in', ['', False])]}"/>
+                            <field name='cesion_number'  attrs="{'readonly':[('sii_cesion_result', 'not in', ['', False])]}"/>
+                            <field name='declaracion_jurada'  attrs="{'readonly':[('sii_cesion_result', 'not in', ['', False])]}"/>
+                            <field name="imagen_ar_ids" editable="bottom" widget="one2many" attrs="{'readonly':[('sii_cesion_result', 'not in', ['', False])]}"/>
                               <tree editable="top/bottom">
                                 <field name="image" filename="name" required="True"/>
                                 <field name="name" />

@@ -2,6 +2,7 @@
 from openerp import fields, models, api, _
 from openerp.exceptions import UserError
 from datetime import datetime, timedelta, date
+import os
 import logging
 from lxml import etree
 from lxml.etree import Element, SubElement
@@ -27,6 +28,15 @@ try:
 except ImportError:
     _logger.info('Cannot import base64 library')
 
+server_url = {
+    'SIIHOMO':'https://maullin.sii.cl/DTEWS/',
+    'SII':'https://palena.sii.cl/DTEWS/',
+}
+
+BC = '''-----BEGIN CERTIFICATE-----\n'''
+EC = '''\n-----END CERTIFICATE-----\n'''
+
+
 class CesionDTE(models.Model):
     _inherit = "account.invoice"
 
@@ -34,6 +44,7 @@ class CesionDTE(models.Model):
         copy=False,
         string='Cesion Number',
         help='',
+        default=1,
     )
     declaracion_jurada = fields.Text(
         copy=False,
@@ -70,10 +81,15 @@ class CesionDTE(models.Model):
         xsd_types = super(CesionDTE, self)._get_xsd_types()
         xsd_types.update({
             'aec': 'AEC_v10.xsd',
-            'dte_ced': 'DTECedido_v10.xsd',
-            'ces': 'Cesion_v10.xsd',
+            'dte_cedido': 'DTECedido_v10.xsd',
+            'cesion': 'Cesion_v10.xsd',
         })
         return xsd_types
+
+    def _get_xsd_file(self, validacion, path=False):
+        if validacion in [ 'aec', 'dte_cedido', 'cesion']:
+            path = os.path.dirname(os.path.realpath(__file__)).replace('/models','/static/xsd/')
+        return super(CesionDTE, self)._get_xsd_file(validacion, path)
 
     def _caratula_aec(self, cesiones):
         xml = '''<DocumentoAEC ID="SetDoc">
@@ -100,17 +116,43 @@ class CesionDTE(models.Model):
         )
         return xml
 
-    def crear_doc_cedido(self, doc):
+    def crear_doc_cedido(self, id):
+        xml = '''<DocumentoDTECedido ID="{0}">
+{1}
+<TmstFirma>{2}</TmstFirma>
+</DocumentoDTECedido>
+    '''.format(
+            id,
+            self.sii_xml_dte,
+            self.time_stamp(),
+        )
+        return xml
+
+    def crear_dte_cedido(self, doc):
         xml = '''<DTECedido xmlns="http://www.sii.cl/SiiDte" version="1.0">
 {}
 </DTECedido>'''.format(doc)
         return xml
 
-    def _crear_info_trans_elec_aec(self, doc):
+    def _crear_info_trans_elec_aec(self, doc, id):
+        xml = '''<DocumentoCesion xmlns="http://www.sii.cl/SiiDte" ID="{0}">
+{1}
+</DocumentoCesion>
+'''.format(
+            id,
+            doc,
+        )
+        return xml
+
+    def _crear_info_cesion(self, doc):
         xml = '''<Cesion xmlns="http://www.sii.cl/SiiDte" version="1.0">
-{}
+{1}
 </Cesion>
-'''.format(doc)
+'''.format(
+            id,
+            doc,
+        )
+        return xml
 
     def _crear_envio_aec(self, doc):
         xml = '''<?xml version="1.0" encoding="ISO-8859-1"?>
@@ -123,9 +165,16 @@ version="1.0">
         return xml
 
     def _append_sig(self, type, msg, message):
+        tag = False
         if type in ['aec']:
-            fulldoc = self.create_template_doc1(message, msg)
-            return fulldoc
+            tag = 'AEC'
+        if type in ['cesion']:
+            tag = 'Cesion'
+        if type in ['dte_cedido']:
+            tag = 'DTECedido'
+        if tag:
+            xml = message.replace('</'+ tag + '>', '') + msg + '</'+ tag + '>'
+            return xml
         return super(CesionDTE, self)._append_sig(type, msg, message)
 
     @api.multi
@@ -143,12 +192,12 @@ version="1.0">
         IdDoc = collections.OrderedDict()
         IdDoc['TipoDTE'] = self.sii_document_class_id.sii_code
         IdDoc['RUTEmisor'] = self.format_vat(self.company_id.vat)
-        if not self.partner_id.commercial_partner_id.vat and not self._es_boleta():
+        if not self.partner_id.commercial_partner_id.vat:
             raise UserError("Debe Ingresar RUT Receptor")
         IdDoc['RUTReceptor'] = self.format_vat(self.partner_id.commercial_partner_id.vat)
         IdDoc['Folio'] = self.get_folio()
         IdDoc['FchEmis'] = self.date_invoice
-        IdDoc['MntTotal'] = self.amount_total
+        IdDoc['MntTotal'] = int(round(self.amount_total, 0))
         return IdDoc
 
     def _cedente(self):
@@ -157,84 +206,66 @@ version="1.0">
         Emisor['RazonSocial'] = self.company_id.partner_id.name
         Emisor['Direccion'] = self._acortar_str(self.company_id.street + ' ' +(self.company_id.street2 or ''), 70)
         Emisor['eMail'] = self.company_id.email or ''
-        Emisor['RUTAutorizado'] = self.company_id.city or ''
+        Emisor['RUTAutorizado'] = collections.OrderedDict()
+        Emisor['RUTAutorizado']['RUT'] = self.format_vat(self.responsable_envio.vat)
+        Emisor['RUTAutorizado']['Nombre'] = self.responsable_envio.name
         Emisor['DeclaracionJurada'] = self.declaracion_jurada
         return Emisor
 
     def _cesionario(self):
         Receptor = collections.OrderedDict()
         if not self.cesionario_id.commercial_partner_id.vat:
-            raise UserError("Debe Ingresar RUT Receptor")
+            raise UserError("Debe Ingresar RUT Cesionario")
         Receptor['RUT'] = self.format_vat(self.cesionario_id.commercial_partner_id.vat)
         Receptor['RazonSocial'] = self._acortar_str(self.cesionario_id.commercial_partner_id.name, 100)
         Receptor['Direccion'] = self._acortar_str((self.cesionario_id.street or self.cesionario_id.commercial_partner_id.street) + ' ' + (self.cesionario_id.street2 or self.cesionario_id.commercial_partner_id.street2 or ''),70)
         Receptor['eMail'] = self.cesionario_id.commercial_partner_id.email
         return Receptor
 
-    def _totales(self, MntExe=0, no_product=False, taxInclude=False):
-        Totales = collections.OrderedDict()
-        if self.sii_document_class_id.sii_code == 34 or (self.referencias and self.referencias[0].sii_referencia_TpoDocRef.sii_code == '34'):
-            Totales['MntExe'] = int(round(self.amount_total, 0))
-            if  no_product:
-                Totales['MntExe'] = 0
-        elif self.amount_untaxed and self.amount_untaxed != 0:
-            if not self._es_boleta() or not taxInclude:
-                IVA = False
-                for t in self.tax_line_ids:
-                    if t.tax_id.sii_code in [14, 15]:
-                        IVA = t
-                if IVA and IVA.base > 0 :
-                    Totales['MntNeto'] = int(round((IVA.base), 0))
-            if MntExe > 0:
-                Totales['MntExe'] = int(round( MntExe))
-            if not self._es_boleta() or not taxInclude:
-                if IVA:
-                    if not self._es_boleta():
-                        Totales['TasaIVA'] = round(IVA.tax_id.amount,2)
-                    Totales['IVA'] = int(round(IVA.amount, 0))
-                if no_product:
-                    Totales['MntNeto'] = 0
-                    if not self._es_boleta():
-                        Totales['TasaIVA'] = 0
-                    Totales['IVA'] = 0
-            if IVA and IVA.tax_id.sii_code in [15]:
-                Totales['ImptoReten'] = collections.OrderedDict()
-                Totales['ImptoReten']['TpoImp'] = IVA.tax_id.sii_code
-                Totales['ImptoReten']['TasaImp'] = round(IVA.tax_id.amount,2)
-                Totales['ImptoReten']['MontoImp'] = int(round(IVA.amount))
-        monto_total = int(round(self.amount_total, 0))
-        if no_product:
-            monto_total = 0
-        Totales['MntTotal'] = monto_total
-        return Totales
+    def _cesion_dte(self, certp, priv_key):
+        id = "DocCed_" + str(self.sii_document_number)
+        xml = self.crear_doc_cedido(id)
+        xml_cedido = self.crear_dte_cedido(xml)
+        dte_cedido = self.sign_full_xml(
+            xml_cedido,
+            priv_key,
+            certp,
+            id,
+            'dte_cedido',
+        )
+        return dte_cedido
 
-    def _cesion_dte(self, n_atencion=None):
-        dte = collections.OrderedDict()
+    def _monto_cesion(self):
+        return int(round(self.amount_total, 0))
 
-        return dte
-
-    def _dte_to_xml(self, dte, tpo_dte="Documento"):
-        ted = dte[tpo_dte + ' ID']['TEDd']
-        dte[(tpo_dte + ' ID')]['TEDd'] = ''
+    def _cesion(self, certp, priv_key):
+        id = 'CesDoc1'
+        data = collections.OrderedDict()
+        data['SeqCesion'] = self.cesion_number
+        data['IdDTE'] = self._id_dte()
+        data['Cedente'] = self._cedente()
+        data['Cesionario'] = self._cesionario()
+        data['MontoCesion'] = self._monto_cesion()
+        data['UltimoVencimiento'] = self.date_invoice
+        data['TmstCesion'] = self.time_stamp()
         xml = dicttoxml.dicttoxml(
-            dte, root=False, attr_type=False) \
-            .replace('<item>','').replace('</item>','')\
-            .replace('<reflines>','').replace('</reflines>','')\
-            .replace('<TEDd>','').replace('</TEDd>','')\
-            .replace('</'+ tpo_dte + '_ID>','\n'+ted+'\n</'+ tpo_dte + '_ID>')
-        return xml
+            {'item':data}, root=False, attr_type=False) \
+            .replace('<item>','').replace('</item>','')
+        doc_cesion_xml =  self._crear_info_trans_elec_aec(xml, id)
+        cesion_xml =  self._crear_info_cesion(doc_cesion_xml)
+        cesion = self.sign_full_xml(
+            '<?xml version="1.0" encoding="ISO-8859-1"?>\n' + cesion_xml,
+            priv_key,
+            certp,
+            id,
+            'cesion',
+        )
+        return cesion.replace('<?xml version="1.0" encoding="ISO-8859-1"?>\n','')
 
-    def _tpo_dte(self):
-        tpo_dte = "Documento"
-        if self.sii_document_class_id.sii_code == 43:
-        	tpo_dte = 'Liquidacion'
-        return tpo_dte
-
-    def _crear_envio(self, n_atencion=None, RUTRecep="60803000-K"):
+    def _crear_envio_cesion(self):
         dicttoxml.set_debug(False)
-        cesiones = collections.OrderedDict()
         try:
-            signature_d = self.get_digital_signature(inv.company_id)
+            signature_d = self.get_digital_signature(self.company_id)
         except:
             raise UserError(_('''There is no Signer Person with an \
         authorized signature for you in the system. Please make sure that \
@@ -243,64 +274,43 @@ version="1.0">
         signature.'''))
         certp = signature_d['cert'].replace(
             BC, '').replace(EC, '').replace('\n', '')
-        file_name = ""
+        file_name = "ces_1"
         file_name += ".xml"
-        cesiones['DTECedido'] = self._cesion_dte()
-        cesions['Cesion'] = self._crear_info_trans_elec_aec()
-        env = 'aec'
-        cartulado  = self._caratula_aec(
-            cesiones,
+        DTECedido = self._cesion_dte(certp, signature_d['priv_key'])
+        Cesion = self._cesion(certp, signature_d['priv_key'])
+        caratulado  = self._caratula_aec(
+            DTECedido + '\n' + Cesion,
         )
-        envio_csion_dte = self._crear_envio_aec(caratulado)
+        envio_cesion_dte = self._crear_envio_aec(caratulado)
         envio_dte = self.sign_full_xml(
-            envio_dte,
+            envio_cesion_dte,
             signature_d['priv_key'],
             certp,
-            'SetDoc',
-            env,
+            'Doc1',
+            'aec',
         )
-        return envio_dte, file_name, company_id
+        return envio_dte, file_name
 
     @api.multi
     def validate_cesion(self):
         for inv in self.with_context(lang='es_CL'):
-            inv.sii_result = 'NoEnviado'
+            inv.sii_cesion_result = 'NoEnviado'
             inv.responsable_envio = self.env.user.id
             if inv.type in ['out_invoice', 'out_refund']:
                 if inv.journal_id.restore_mode:
                     inv.sii_result = 'Proceso'
                 else:
-                    inv._timbrar()
+                    inv._crear_envio_cesion()
                     self.env['sii.cola_envio'].create({
                                                 'doc_ids':[inv.id],
                                                 'model':'account.invoice',
                                                 'user_id':self.env.user.id,
-                                                'tipo_trabajo': 'pasivo',
-                                                'date_time': (datetime.now() + timedelta(hours=12)),
+                                                'tipo_trabajo': 'cesion',
                                                 })
-        super(invoice,self).invoice_validate()
-
     @api.multi
-    def do_cesion_dte_send(self):
-        ids = []
-        for inv in self.with_context(lang='es_CL'):
-            if inv.sii_result in ['','NoEnviado','Rechazado']:
-                if inv.sii_result in ['Rechazado']:
-                    inv._timbrar()
-                inv.sii_result = 'EnCola'
-                ids.append(inv.id)
-        if ids:
-            self.env['sii.cola_envio'].create({
-                                    'doc_ids': ids,
-                                    'model':'account.invoice',
-                                    'user_id': self.env.user.id,
-                                    'tipo_trabajo': 'envio',
-                                    })
-
-    @api.multi
-    def do_dte_send(self, n_atencion=None):
-        envio_dte, file_name, company_id = self._crear_envio(n_atencion, RUTRecep="60803000-K")
-        result = self.send_xml_file(envio_dte, file_name, company_id)
+    def cesion_dte_send(self, n_atencion=None):
+        envio_dte, file_name = self._crear_envio_cesion(n_atencion, RUTRecep="60803000-K")
+        result = self.send_xml_file(envio_dte, file_name, self.company_id)
         for inv in self:
             inv.write({'sii_xml_response':result['sii_xml_response'],
                 'sii_send_ident':result['sii_send_ident'],
@@ -309,7 +319,24 @@ version="1.0">
                 'sii_send_file_name' : file_name,
                 })
 
-    def _get_send_status(self, track_id, signature_d,token):
+    @api.multi
+    def do_cesion_dte_send(self):
+        ids = []
+        for inv in self.with_context(lang='es_CL'):
+            if inv.sii_cesion_result in ['','NoEnviado','Rechazado']:
+                if inv.sii_cesion_result in ['Rechazado']:
+                    inv._crear_envio_cesion()
+                inv.sii_cesion_result = 'EnCola'
+                ids.append(inv.id)
+        if ids:
+            self.env['sii.cola_envio'].create({
+                                    'doc_ids': ids,
+                                    'model':'account.invoice',
+                                    'user_id': self.env.user.id,
+                                    'tipo_trabajo': 'cesion',
+                                    })
+
+    def _get_cesion_send_status(self, track_id, signature_d,token):
         url = server_url[self.company_id.dte_service_provider] + 'QueryEstUp.jws?WSDL'
         ns = 'urn:'+ server_url[self.company_id.dte_service_provider] + 'QueryEstUp.jws'
         _server = SOAPProxy(url, ns)
@@ -337,7 +364,7 @@ version="1.0">
             status = {'warning':{'title':_('Error RCT'), 'message': _(resp['SII:RESPUESTA']['SII:RESP_HDR']['GLOSA'])}}
         return status
 
-    def _get_dte_status(self, signature_d, token):
+    def _get_cesion_dte_status(self, signature_d, token):
         url = server_url[self.company_id.dte_service_provider] + 'QueryEstDte.jws?WSDL'
         ns = 'urn:'+ server_url[self.company_id.dte_service_provider] + 'QueryEstDte.jws'
         _server = SOAPProxy(url, ns)
@@ -372,7 +399,7 @@ version="1.0">
             self.sii_result = "Rechazado"
 
     @api.multi
-    def ask_for_dte_status(self):
+    def ask_for_cesion_dte_status(self):
         try:
             signature_d = self.get_digital_signature_pem(
                 self.company_id)

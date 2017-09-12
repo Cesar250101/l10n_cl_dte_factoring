@@ -9,12 +9,12 @@ class ColaEnvio(models.Model):
     _inherit = "sii.cola_envio"
 
     tipo_trabajo = fields.Selection(selection_add=[('cesion','Cesion')])
-    
+
     def _procesar_tipo_trabajo(self):
         if self.tipo_trabajo == 'cesion':
             docs = self.env[self.model].browse(ast.literal_eval(self.doc_ids))
             try:
-                docs.do_cesion_dte_send()
+                docs.cesion_dte_send()
                 if docs[0].sii_cesion_result not in ['', 'NoEnviado']:
                     self.tipo_trabajo = 'consulta'
             except Exception as e:
