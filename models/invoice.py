@@ -135,7 +135,7 @@ class CesionDTE(models.Model):
         return xml
 
     def _crear_info_trans_elec_aec(self, doc, id):
-        xml = '''<DocumentoCesion xmlns="http://www.sii.cl/SiiDte" ID="{0}">
+        xml = '''<DocumentoCesion ID="{0}">
 {1}
 </DocumentoCesion>
 '''.format(
@@ -158,7 +158,7 @@ class CesionDTE(models.Model):
         xml = '''<?xml version="1.0" encoding="ISO-8859-1"?>
 <AEC xmlns="http://www.sii.cl/SiiDte" \
 xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" \
-xsi:schemaLocation="http://www.sii.cl/SiiDte Cesion_v10.xsd" \
+xsi:schemaLocation="http://www.sii.cl/SiiDte AEC_v10.xsd" \
 version="1.0">
     {}
 </AEC>'''.format(doc)
@@ -187,6 +187,27 @@ version="1.0">
             'url': url_path,
             'target': 'self',
         }
+
+    def init_params(self, signature_d, company_id, file_name, envio_dte):
+        params = collections.OrderedDict()
+        if "AEC_" in file_name:
+            params['emailNotif'] = self.responsable_envio.email
+        else:
+            params['rutSender'] = signature_d['subject_serial_number'][:8]
+            params['dvSender'] = signature_d['subject_serial_number'][-1]
+        params['rutCompany'] = company_id.vat[2:-1]
+        params['dvCompany'] = company_id.vat[-1]
+        params['archivo'] = (file_name,envio_dte, "text/xml")
+        return params
+
+    def procesar_recepcion(self, retorno, respuesta_dict ):
+        if not 'RECEPCIONAEC' in respuesta_dict:
+            return super(CesionDTE, self).procesar_respuesta(retorno, respuesta_dict)
+        if respuesta_dict['RECEPCIONAEC']['STATUS'] != '0':
+            _logger.info(connection_status[respuesta_dict['RECEPCIONDTE']['STATUS']])
+        else:
+            retorno.update({'sii_result': 'Enviado','sii_send_ident':respuesta_dict['RECEPCIONAEC']['TRACKID']})
+        return retorno
 
     def _id_dte(self):
         IdDoc = collections.OrderedDict()
@@ -274,7 +295,7 @@ version="1.0">
         signature.'''))
         certp = signature_d['cert'].replace(
             BC, '').replace(EC, '').replace('\n', '')
-        file_name = "ces_1"
+        file_name = "AEC_1"
         file_name += ".xml"
         DTECedido = self._cesion_dte(certp, signature_d['priv_key'])
         Cesion = self._cesion(certp, signature_d['priv_key'])
@@ -308,13 +329,13 @@ version="1.0">
                                                 'tipo_trabajo': 'cesion',
                                                 })
     @api.multi
-    def cesion_dte_send(self, n_atencion=None):
-        envio_dte, file_name = self._crear_envio_cesion(n_atencion, RUTRecep="60803000-K")
-        result = self.send_xml_file(envio_dte, file_name, self.company_id)
+    def cesion_dte_send(self):
+        envio_dte, file_name = self._crear_envio_cesion()
+        result = self.send_xml_file(envio_dte, file_name, self.company_id, post='/cgi_rtc/RTC/RTCAnotEnvio.cgi')
         for inv in self:
             inv.write({'sii_xml_response':result['sii_xml_response'],
                 'sii_send_ident':result['sii_send_ident'],
-                'sii_result': result['sii_result'],
+                'sii_cesion_result': result['sii_result'],
                 'sii_xml_request':envio_dte,
                 'sii_send_file_name' : file_name,
                 })
