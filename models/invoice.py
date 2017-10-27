@@ -28,6 +28,11 @@ try:
 except ImportError:
     _logger.info('Cannot import base64 library')
 
+try:
+    from SOAPpy import SOAPProxy
+except ImportError:
+    _logger.info('Cannot import SOOAPpy')
+
 server_url = {
     'SIIHOMO':'https://maullin.sii.cl/DTEWS/',
     'SII':'https://palena.sii.cl/DTEWS/',
@@ -71,6 +76,16 @@ class CesionDTE(models.Model):
         copy=False,
         help="SII request result",
     )
+    sii_cesion_message = fields.Text(
+        string='SII Message',
+        copy=False,
+    )
+    sii_xml_cesion_response = fields.Text(
+        string='SII XML Response',
+        copy=False)
+    sii_cesion_send_ident = fields.Text(
+        string='SII Send Identification',
+        copy=False)
     imagen_ar_ids = fields.One2many(
         'account.invoice.imagen_ar',
         'invoice_id',
@@ -92,7 +107,7 @@ class CesionDTE(models.Model):
         return super(CesionDTE, self)._get_xsd_file(validacion, path)
 
     def _caratula_aec(self, cesiones):
-        xml = '''<DocumentoAEC ID="SetDoc">
+        xml = '''<DocumentoAEC ID="Doc1">
     <Caratula version="1.0">
     <RutCedente>{0}</RutCedente>
     <RutCesionario>{1}</RutCesionario>
@@ -202,7 +217,7 @@ version="1.0">
 
     def procesar_recepcion(self, retorno, respuesta_dict ):
         if not 'RECEPCIONAEC' in respuesta_dict:
-            return super(CesionDTE, self).procesar_respuesta(retorno, respuesta_dict)
+            return super(CesionDTE, self).procesar_recepcion(retorno, respuesta_dict)
         if respuesta_dict['RECEPCIONAEC']['STATUS'] != '0':
             _logger.info(connection_status[respuesta_dict['RECEPCIONDTE']['STATUS']])
         else:
@@ -230,7 +245,9 @@ version="1.0">
         Emisor['RUTAutorizado'] = collections.OrderedDict()
         Emisor['RUTAutorizado']['RUT'] = self.format_vat(self.responsable_envio.vat)
         Emisor['RUTAutorizado']['Nombre'] = self.responsable_envio.name
-        Emisor['DeclaracionJurada'] = self.declaracion_jurada
+        declaracion_jurada = 'Se declara bajo juramento que INGENIERIA EN PROYECTOS Y CIA LTDA, RUT 76141481-K ha puesto a disposicion del cesionario FACTOTAL S.A., RUT 96660790-4, el o los documentos donde constan los recibos de las mercaderías entregadas o servicios prestados, entregados por parte del deudor de la factura EMPRESAS LIPIGAS S.A, RUT 96928510-K, de acuerdo a lo establecido en la Ley No. 19.983'
+        Emisor['DeclaracionJurada'] = declaracion_jurada
+        self.declaracion_jurada = declaracion_jurada
         return Emisor
 
     def _cesionario(self):
@@ -274,8 +291,10 @@ version="1.0">
             .replace('<item>','').replace('</item>','')
         doc_cesion_xml =  self._crear_info_trans_elec_aec(xml, id)
         cesion_xml =  self._crear_info_cesion(doc_cesion_xml)
+        root = etree.XML( cesion_xml )
+        xml_formated = etree.tostring(root)
         cesion = self.sign_full_xml(
-            '<?xml version="1.0" encoding="ISO-8859-1"?>\n' + cesion_xml,
+            '<?xml version="1.0" encoding="ISO-8859-1"?>\n' + xml_formated,
             priv_key,
             certp,
             id,
@@ -310,6 +329,7 @@ version="1.0">
             'Doc1',
             'aec',
         )
+        _logger.info(envio_dte)
         return envio_dte, file_name
 
     @api.multi
@@ -333,11 +353,11 @@ version="1.0">
         envio_dte, file_name = self._crear_envio_cesion()
         result = self.send_xml_file(envio_dte, file_name, self.company_id, post='/cgi_rtc/RTC/RTCAnotEnvio.cgi')
         for inv in self:
-            inv.write({'sii_xml_response':result['sii_xml_response'],
-                'sii_send_ident':result['sii_send_ident'],
+            inv.write({
+                'sii_xml_cesion_response':result['sii_xml_response'],
+                'sii_cesion_send_ident':result['sii_send_ident'],
                 'sii_cesion_result': result['sii_result'],
                 'sii_xml_request':envio_dte,
-                'sii_send_file_name' : file_name,
                 })
 
     @api.multi
@@ -358,52 +378,85 @@ version="1.0">
                                     })
 
     def _get_cesion_send_status(self, track_id, signature_d,token):
-        url = server_url[self.company_id.dte_service_provider] + 'QueryEstUp.jws?WSDL'
-        ns = 'urn:'+ server_url[self.company_id.dte_service_provider] + 'QueryEstUp.jws'
+        url = server_url[self.company_id.dte_service_provider] + 'services/wsRPETCConsulta?wsdl'
+        ns = 'urn:'+ server_url[self.company_id.dte_service_provider] + 'services/wsRPETCConsulta'
         _server = SOAPProxy(url, ns)
         rut = self.format_vat(self.company_id.vat, con_cero=True)
-        respuesta = _server.getEstUp(
-            rut[:8],
-            str(rut[-1]),
+        respuesta = _server.getEstEnvio(
+            token,
             track_id,
-            token)
-        self.sii_receipt = respuesta
+        )
+        #self.sii_receipt = respuesta
         resp = xmltodict.parse(respuesta)
         status = False
-        if resp['SII:RESPUESTA']['SII:RESP_HDR']['ESTADO'] == "-11":
-            if resp['SII:RESPUESTA']['SII:RESP_HDR']['ERR_CODE'] == "2":
-                status =  {'warning':{'title':_('Estado -11'), 'message': _("Estado -11: Espere a que sea aceptado por el SII, intente en 5s más")}}
-            else:
-                status =  {'warning':{'title':_('Estado -11'), 'message': _("Estado -11: error 1Algo a salido mal, revisar carátula")}}
-        if resp['SII:RESPUESTA']['SII:RESP_HDR']['ESTADO'] == "EPR":
-            self.sii_result = "Proceso"
-            if resp['SII:RESPUESTA']['SII:RESP_BODY']['RECHAZADOS'] == "1":
-                self.sii_result = "Rechazado"
-        elif resp['SII:RESPUESTA']['SII:RESP_HDR']['ESTADO'] == "RCT":
-            self.sii_result = "Rechazado"
-            _logger.info(resp)
-            status = {'warning':{'title':_('Error RCT'), 'message': _(resp['SII:RESPUESTA']['SII:RESP_HDR']['GLOSA'])}}
+        sii_result = False
+        try:
+            if resp['SII:RESPUESTA']['SII:RESP_HDR']['ESTADO_ENVIO'] == "-11":
+                if resp['SII:RESPUESTA']['SII:RESP_HDR']['ERR_CODE'] == "2":
+                    status =  {'warning':{'title':_('Estado -11'), 'message': _("Estado -11: Espere a que sea aceptado por el SII, intente en 5s más")}}
+                else:
+                    status =  {'warning':{'title':_('Estado -11'), 'message': _("Estado -11: error 1Algo a salido mal, revisar carátula")}}
+            if resp['SII:RESPUESTA']['SII:RESP_HDR']['ESTADO_ENVIO'] == "EPR":
+                sii_result = "Proceso"
+                if resp['SII:RESPUESTA']['SII:RESP_BODY']['RECHAZADOS'] == "1":
+                    sii_result = "Rechazado"
+            elif resp['SII:RESPUESTA']['SII:RESP_HDR']['ESTADO_ENVIO'] == "RCT":
+                sii_result = "Rechazado"
+                _logger.warning(resp)
+                status = {'warning':{'title':_('Error RCT'), 'message': _(resp['SII:RESPUESTA']['SII:RESP_HDR']['GLOSA'])}}
+        except:
+            sii_result = "Rechazado"
+            _logger.warning(resp)
+            status = {'warning':{'title':_('Error RCT'), 'message': _(resp['SII:RESPUESTA']['SII:RESP_BODY']['DESC_ESTADO'])}}
+        if sii_result:
+            self.sii_cesion_result = sii_result
         return status
 
     def _get_cesion_dte_status(self, signature_d, token):
-        url = server_url[self.company_id.dte_service_provider] + 'QueryEstDte.jws?WSDL'
-        ns = 'urn:'+ server_url[self.company_id.dte_service_provider] + 'QueryEstDte.jws'
+        url = server_url[self.company_id.dte_service_provider] + 'services/wsRPETCConsulta?wsdl'
+        ns = 'urn:'+ server_url[self.company_id.dte_service_provider] + 'services/wsRPETCConsulta'
         _server = SOAPProxy(url, ns)
-        receptor = self.format_vat(self.commercial_partner_id.vat)
-        date_invoice = datetime.strptime(self.date_invoice, "%Y-%m-%d").strftime("%d-%m-%Y")
         rut = signature_d['subject_serial_number']
-        respuesta = _server.getEstDte(
+        respuesta = _server.getEstCesion(
+            token,
             rut[:8],
             str(rut[-1]),
-            self.company_id.vat[2:-1],
-            self.company_id.vat[-1],
-            receptor[:8],
-            receptor[-1],
             str(self.sii_document_class_id.sii_code),
             str(self.sii_document_number),
-            date_invoice,
-            str(int(self.amount_total)),
+            str(self.cesion_number) if self.cesion_number else False,            
+        )
+        self.sii_message = respuesta
+        resp = xmltodict.parse(respuesta)
+        try:
+            if resp['SII:RESPUESTA']['SII:RESP_HDR']['ESTADO'] == '2':
+                status = {'warning':{'title':_("Error code: 2"), 'message': _(resp['SII:RESPUESTA']['SII:RESP_HDR']['GLOSA'])}}
+                return status
+            if resp['SII:RESPUESTA']['SII:RESP_HDR']['ESTADO'] == "EPR":
+                sii_result = "Proceso"
+                if resp['SII:RESPUESTA']['SII:RESP_BODY']['RECHAZADOS'] == "1":
+                    sii_result = "Rechazado"
+                if resp['SII:RESPUESTA']['SII:RESP_BODY']['REPARO'] == "1":
+                    sii_result = "Reparo"
+            elif resp['SII:RESPUESTA']['SII:RESP_HDR']['ESTADO'] == "FAU":
+                sii_result = "Rechazado"
+        except:
+            _logger.info(resp)
+            result = 'Enviado'
+        self.sii_cesion_result = result
+
+    def _get_datos_cesion_dte(self, signature_d, token):
+        url = server_url[self.company_id.dte_service_provider] + 'services/wsRPETCConsulta?wsdl'
+        ns = 'urn:'+ server_url[self.company_id.dte_service_provider] + 'services/wsRPETCConsulta?wsdl'
+        _server = SOAPProxy(url, ns)
+        rut = signature_d['subject_serial_number']
+        respuesta = _server.getEstCesionRelac(
             token,
+            rut[:8],
+            str(rut[-1]),
+            str(self.sii_document_class_id.sii_code),
+            str(self.sii_document_number),
+            self.company_id.vat[2:-1],
+            self.company_id.vat[-1],
         )
         self.sii_message = respuesta
         resp = xmltodict.parse(respuesta)
@@ -411,14 +464,15 @@ version="1.0">
             status = {'warning':{'title':_("Error code: 2"), 'message': _(resp['SII:RESPUESTA']['SII:RESP_HDR']['GLOSA'])}}
             return status
         if resp['SII:RESPUESTA']['SII:RESP_HDR']['ESTADO'] == "EPR":
-            self.sii_result = "Proceso"
+            sii_result = "Proceso"
             if resp['SII:RESPUESTA']['SII:RESP_BODY']['RECHAZADOS'] == "1":
-                self.sii_result = "Rechazado"
+                sii_result = "Rechazado"
             if resp['SII:RESPUESTA']['SII:RESP_BODY']['REPARO'] == "1":
-                self.sii_result = "Reparo"
+                sii_result = "Reparo"
         elif resp['SII:RESPUESTA']['SII:RESP_HDR']['ESTADO'] == "FAU":
-            self.sii_result = "Rechazado"
-
+            sii_result = "Rechazado"
+        self.sii_cesion_result = result
+    
     @api.multi
     def ask_for_cesion_dte_status(self):
         try:
@@ -429,17 +483,25 @@ version="1.0">
             seed_firmado = self.sign_seed(
                 template_string,
                 signature_d['priv_key'],
-                signature_d['cert'])
-            token = self.get_token(seed_firmado,self.company_id)
+                signature_d['cert'],
+            )
+            token = self.get_token(
+                seed_firmado,
+                self.company_id,
+            )
         except AssertionError as e:
             raise UserError(str(e))
         if not self.sii_send_ident:
             raise UserError('No se ha enviado aún el documento, aún está en cola de envío interna en odoo')
-        if self.sii_result == 'Enviado':
-            status = self._get_send_status(self.sii_send_ident, signature_d, token)
-            if self.sii_result != 'Proceso':
+        if self.sii_cesion_result == 'Enviado':
+            status = self._get_cesion_send_status(
+                self.sii_cesion_send_ident, 
+                signature_d, 
+                token,
+            )
+            if self.sii_cesion_result != 'Proceso':
                 return status
-        return self._get_dte_status(signature_d, token)
+        return self._get_cesion_dte_status(signature_d, token)
 
 class CesionDTEAR(models.Model):
     _name = 'account.invoice.imagen_ar'
