@@ -29,6 +29,8 @@ class ColaEnvio(models.Model):
             else:
                 try:
                     docs[0].ask_for_cesion_dte_status()
+                    if docs[0].sii_cesion_result not in ['enviado']:
+                        self.unlink()
                 except Exception as e:
                     _logger.warning("Error en Consulta")
                     _logger.warning(str(e))
