@@ -76,6 +76,9 @@ class CesionDTE(models.Model):
         copy=False,
         help="SII request result",
     )
+    sii_cesion_receipt = fields.Text(
+        string='SII XML Reception',
+        copy=False)
     sii_cesion_message = fields.Text(
         string='SII Message',
         copy=False,
@@ -91,6 +94,20 @@ class CesionDTE(models.Model):
         'invoice_id',
         string="Imagenes de acuse de recibo",
     )
+
+    @api.onchange('cesionario_id')
+    def set_declaracion(self):
+        declaracion_jurada = '''Se declara bajo juramento que {0}, RUT {1} \
+ha puesto a disposicion del cesionario {2}, RUT {3}, el o los documentos donde constan los recibos de las mercaderías entregadas o servicios prestados, \
+entregados por parte del deudor de la factura {4}, RUT {5}, de acuerdo a lo establecido en la Ley No. 19.983'''.format(
+            self.company_id.partner_id.name,
+            self.format_vat(self.company_id.partner_id.vat),
+            self.cesionario_id.name,
+            self.format_vat(self.cesionario_id.vat),
+            self.comercial_partner_id.name,
+            self.format_vat(self.comercial_partner_id.vat),
+        )
+        self.declaracion_jurada = declaracion_jurada
 
     def _get_xsd_types(self):
         xsd_types = super(CesionDTE, self)._get_xsd_types()
@@ -245,9 +262,7 @@ version="1.0">
         Emisor['RUTAutorizado'] = collections.OrderedDict()
         Emisor['RUTAutorizado']['RUT'] = self.format_vat(self.responsable_envio.vat)
         Emisor['RUTAutorizado']['Nombre'] = self.responsable_envio.name
-        declaracion_jurada = 'Se declara bajo juramento que INGENIERIA EN PROYECTOS Y CIA LTDA, RUT 76141481-K ha puesto a disposicion del cesionario FACTOTAL S.A., RUT 96660790-4, el o los documentos donde constan los recibos de las mercaderías entregadas o servicios prestados, entregados por parte del deudor de la factura EMPRESAS LIPIGAS S.A, RUT 96928510-K, de acuerdo a lo establecido en la Ley No. 19.983'
-        Emisor['DeclaracionJurada'] = declaracion_jurada
-        self.declaracion_jurada = declaracion_jurada
+        Emisor['DeclaracionJurada'] = self.declaracion_jurada
         return Emisor
 
     def _cesionario(self):
@@ -329,7 +344,6 @@ version="1.0">
             'Doc1',
             'aec',
         )
-        _logger.info(envio_dte)
         return envio_dte, file_name
 
     @api.multi
@@ -386,7 +400,7 @@ version="1.0">
             token,
             track_id,
         )
-        #self.sii_receipt = respuesta
+        self.sii_cesion_receipt = respuesta
         resp = xmltodict.parse(respuesta)
         status = False
         sii_result = False
@@ -400,7 +414,7 @@ version="1.0">
                 sii_result = "Proceso"
                 if resp['SII:RESPUESTA']['SII:RESP_BODY']['RECHAZADOS'] == "1":
                     sii_result = "Rechazado"
-            elif resp['SII:RESPUESTA']['SII:RESP_HDR']['ESTADO_ENVIO'] == "RCT":
+            elif resp['SII:RESPUESTA']['SII:RESP_HDR']['ESTADO_ENVIO'] in ["RCT", 'RDC']:
                 sii_result = "Rechazado"
                 _logger.warning(resp)
                 status = {'warning':{'title':_('Error RCT'), 'message': _(resp['SII:RESPUESTA']['SII:RESP_HDR']['GLOSA'])}}
@@ -423,26 +437,26 @@ version="1.0">
             str(rut[-1]),
             str(self.sii_document_class_id.sii_code),
             str(self.sii_document_number),
-            str(self.cesion_number) if self.cesion_number else False,            
+            str(self.cesion_number) if self.cesion_number else False,
         )
-        self.sii_message = respuesta
+        self.sii_cesion_message = respuesta
         resp = xmltodict.parse(respuesta)
-        try:
-            if resp['SII:RESPUESTA']['SII:RESP_HDR']['ESTADO'] == '2':
-                status = {'warning':{'title':_("Error code: 2"), 'message': _(resp['SII:RESPUESTA']['SII:RESP_HDR']['GLOSA'])}}
-                return status
-            if resp['SII:RESPUESTA']['SII:RESP_HDR']['ESTADO'] == "EPR":
-                sii_result = "Proceso"
-                if resp['SII:RESPUESTA']['SII:RESP_BODY']['RECHAZADOS'] == "1":
-                    sii_result = "Rechazado"
-                if resp['SII:RESPUESTA']['SII:RESP_BODY']['REPARO'] == "1":
-                    sii_result = "Reparo"
-            elif resp['SII:RESPUESTA']['SII:RESP_HDR']['ESTADO'] == "FAU":
+        sii_result = 'Enviado'
+        status = False
+        _logger.info(resp)
+        if resp['SII:RESPUESTA']['SII:RESP_HDR']['SII:ESTADO'] in ['2', '-13']:
+            status = {'warning':{'title':_("Error code: 2"), 'message': _(resp['SII:RESPUESTA']['SII:RESP_HDR']['SII:GLOSA'])}}
+            sii_result = "Rechazado"
+        if resp['SII:RESPUESTA']['SII:RESP_HDR']['SII:ESTADO'] == "EPR":
+            sii_result = "Proceso"
+            if resp['SII:RESPUESTA']['SII:RESP_BODY']['RECHAZADOS'] == "1":
                 sii_result = "Rechazado"
-        except:
-            _logger.info(resp)
-            result = 'Enviado'
-        self.sii_cesion_result = result
+            if resp['SII:RESPUESTA']['SII:RESP_BODY']['REPARO'] == "1":
+                sii_result = "Reparo"
+        elif resp['SII:RESPUESTA']['SII:RESP_HDR']['SII:ESTADO'] == "FAU":
+            sii_result = "Rechazado"
+        self.sii_cesion_result = sii_result
+        return status
 
     def _get_datos_cesion_dte(self, signature_d, token):
         url = server_url[self.company_id.dte_service_provider] + 'services/wsRPETCConsulta?wsdl'
@@ -460,6 +474,7 @@ version="1.0">
         )
         self.sii_message = respuesta
         resp = xmltodict.parse(respuesta)
+        status =  False
         if resp['SII:RESPUESTA']['SII:RESP_HDR']['ESTADO'] == '2':
             status = {'warning':{'title':_("Error code: 2"), 'message': _(resp['SII:RESPUESTA']['SII:RESP_HDR']['GLOSA'])}}
             return status
@@ -472,7 +487,7 @@ version="1.0">
         elif resp['SII:RESPUESTA']['SII:RESP_HDR']['ESTADO'] == "FAU":
             sii_result = "Rechazado"
         self.sii_cesion_result = result
-    
+
     @api.multi
     def ask_for_cesion_dte_status(self):
         try:
@@ -495,8 +510,8 @@ version="1.0">
             raise UserError('No se ha enviado aún el documento, aún está en cola de envío interna en odoo')
         if self.sii_cesion_result == 'Enviado':
             status = self._get_cesion_send_status(
-                self.sii_cesion_send_ident, 
-                signature_d, 
+                self.sii_cesion_send_ident,
+                signature_d,
                 token,
             )
             if self.sii_cesion_result != 'Proceso':
