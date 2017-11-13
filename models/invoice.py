@@ -16,22 +16,22 @@ _logger = logging.getLogger(__name__)
 try:
     import xmltodict
 except ImportError:
-    _logger.info('Cannot import xmltodict library')
+    _logger.warning('Cannot import xmltodict library')
 
 try:
     import dicttoxml
 except ImportError:
-    _logger.info('Cannot import dicttoxml library')
+    _logger.warning('Cannot import dicttoxml library')
 
 try:
     import base64
 except ImportError:
-    _logger.info('Cannot import base64 library')
+    _logger.warning('Cannot import base64 library')
 
 try:
     from SOAPpy import SOAPProxy
 except ImportError:
-    _logger.info('Cannot import SOOAPpy')
+    _logger.warning('Cannot import SOOAPpy')
 
 server_url = {
     'SIIHOMO':'https://maullin.sii.cl/DTEWS/',
@@ -69,7 +69,8 @@ class CesionDTE(models.Model):
         ('Aceptado', 'Aceptado'),
         ('Rechazado', 'Rechazado'),
         ('Reparo', 'Reparo'),
-        ('Proceso', 'Procesado'),
+        ('Procesado', 'Procesado'),
+        ('Cedido', 'Cedido'),
         ('Reenviar', 'Reenviar'),
         ('Anulado', 'Anulado')],
         string='Resultado Cesion',
@@ -97,17 +98,18 @@ class CesionDTE(models.Model):
 
     @api.onchange('cesionario_id')
     def set_declaracion(self):
-        declaracion_jurada = '''Se declara bajo juramento que {0}, RUT {1} \
+        if self.cesionario_id:
+            declaracion_jurada = u'''Se declara bajo juramento que {0}, RUT {1} \
 ha puesto a disposicion del cesionario {2}, RUT {3}, el o los documentos donde constan los recibos de las mercaderías entregadas o servicios prestados, \
 entregados por parte del deudor de la factura {4}, RUT {5}, de acuerdo a lo establecido en la Ley No. 19.983'''.format(
-            self.company_id.partner_id.name,
-            self.format_vat(self.company_id.partner_id.vat),
-            self.cesionario_id.name,
-            self.format_vat(self.cesionario_id.vat),
-            self.comercial_partner_id.name,
-            self.format_vat(self.comercial_partner_id.vat),
-        )
-        self.declaracion_jurada = declaracion_jurada
+                self.company_id.partner_id.name,
+                self.format_vat(self.company_id.partner_id.vat),
+                self.cesionario_id.name,
+                self.format_vat(self.cesionario_id.vat),
+                self.commercial_partner_id.name,
+                self.format_vat(self.commercial_partner_id.vat),
+            )
+            self.declaracion_jurada = declaracion_jurada
 
     def _get_xsd_types(self):
         xsd_types = super(CesionDTE, self)._get_xsd_types()
@@ -236,7 +238,7 @@ version="1.0">
         if not 'RECEPCIONAEC' in respuesta_dict:
             return super(CesionDTE, self).procesar_recepcion(retorno, respuesta_dict)
         if respuesta_dict['RECEPCIONAEC']['STATUS'] != '0':
-            _logger.info(connection_status[respuesta_dict['RECEPCIONDTE']['STATUS']])
+            _logger.warning(connection_status[respuesta_dict['RECEPCIONDTE']['STATUS']])
         else:
             retorno.update({'sii_result': 'Enviado','sii_send_ident':respuesta_dict['RECEPCIONAEC']['TRACKID']})
         return retorno
@@ -404,23 +406,20 @@ version="1.0">
         resp = xmltodict.parse(respuesta)
         status = False
         sii_result = False
-        try:
-            if resp['SII:RESPUESTA']['SII:RESP_HDR']['ESTADO_ENVIO'] == "-11":
-                if resp['SII:RESPUESTA']['SII:RESP_HDR']['ERR_CODE'] == "2":
-                    status =  {'warning':{'title':_('Estado -11'), 'message': _("Estado -11: Espere a que sea aceptado por el SII, intente en 5s más")}}
-                else:
-                    status =  {'warning':{'title':_('Estado -11'), 'message': _("Estado -11: error 1Algo a salido mal, revisar carátula")}}
-            if resp['SII:RESPUESTA']['SII:RESP_HDR']['ESTADO_ENVIO'] == "EPR":
-                sii_result = "Proceso"
-                if resp['SII:RESPUESTA']['SII:RESP_BODY']['RECHAZADOS'] == "1":
-                    sii_result = "Rechazado"
-            elif resp['SII:RESPUESTA']['SII:RESP_HDR']['ESTADO_ENVIO'] in ["RCT", 'RDC']:
+        if resp['SII:RESPUESTA']['SII:RESP_HDR']['SII:ESTADO'] == "-11":
+            if resp['SII:RESPUESTA']['SII:RESP_HDR']['ERR_CODE'] == "2":
+                status =  {'warning':{'title':_('Estado -11'), 'message': _("Estado -11: Espere a que sea aceptado por el SII, intente en 5s más")}}
+            else:
+                status =  {'warning':{'title':_('Estado -11'), 'message': _("Estado -11: error Algo a salido mal, revisar carátula")}}
+        if resp['SII:RESPUESTA']['SII:RESP_HDR']['SII:ESTADO'] == '0':
+            if resp['SII:RESPUESTA']['SII:RESP_BODY']['ESTADO_ENVIO'] in ["EPR", "EOK"]:
+                sii_result = "Procesado"
+            elif resp['SII:RESPUESTA']['SII:RESP_HDR']['SII:ESTADO'] in ["RCT", 'RDC']:
                 sii_result = "Rechazado"
-                _logger.warning(resp)
                 status = {'warning':{'title':_('Error RCT'), 'message': _(resp['SII:RESPUESTA']['SII:RESP_HDR']['GLOSA'])}}
-        except:
+        else:
             sii_result = "Rechazado"
-            _logger.warning(resp)
+            _logger.warning("rechazado %s" %resp)
             status = {'warning':{'title':_('Error RCT'), 'message': _(resp['SII:RESPUESTA']['SII:RESP_BODY']['DESC_ESTADO'])}}
         if sii_result:
             self.sii_cesion_result = sii_result
@@ -437,22 +436,16 @@ version="1.0">
             str(rut[-1]),
             str(self.sii_document_class_id.sii_code),
             str(self.sii_document_number),
-            str(self.cesion_number) if self.cesion_number else False,
         )
         self.sii_cesion_message = respuesta
         resp = xmltodict.parse(respuesta)
-        sii_result = 'Enviado'
+        sii_result = 'Procesado'
         status = False
-        _logger.info(resp)
         if resp['SII:RESPUESTA']['SII:RESP_HDR']['SII:ESTADO'] in ['2', '-13']:
             status = {'warning':{'title':_("Error code: 2"), 'message': _(resp['SII:RESPUESTA']['SII:RESP_HDR']['SII:GLOSA'])}}
             sii_result = "Rechazado"
-        if resp['SII:RESPUESTA']['SII:RESP_HDR']['SII:ESTADO'] == "EPR":
-            sii_result = "Proceso"
-            if resp['SII:RESPUESTA']['SII:RESP_BODY']['RECHAZADOS'] == "1":
-                sii_result = "Rechazado"
-            if resp['SII:RESPUESTA']['SII:RESP_BODY']['REPARO'] == "1":
-                sii_result = "Reparo"
+        if resp['SII:RESPUESTA']['SII:RESP_HDR']['SII:ESTADO'] == "0":
+            sii_result = "Cedido"
         elif resp['SII:RESPUESTA']['SII:RESP_HDR']['SII:ESTADO'] == "FAU":
             sii_result = "Rechazado"
         self.sii_cesion_result = sii_result
@@ -463,30 +456,31 @@ version="1.0">
         ns = 'urn:'+ server_url[self.company_id.dte_service_provider] + 'services/wsRPETCConsulta?wsdl'
         _server = SOAPProxy(url, ns)
         rut = signature_d['subject_serial_number']
+        tenedor_rut = self.company_id.vat if self.sii_cesion_result == 'Cedido' else self.cesionario_id.vat
         respuesta = _server.getEstCesionRelac(
             token,
             rut[:8],
             str(rut[-1]),
             str(self.sii_document_class_id.sii_code),
             str(self.sii_document_number),
-            self.company_id.vat[2:-1],
-            self.company_id.vat[-1],
+            tenedor_rut[2:-1],
+            tenedor_rut[-1],
         )
-        self.sii_message = respuesta
+        #self.sii_message = respuesta
         resp = xmltodict.parse(respuesta)
         status =  False
         if resp['SII:RESPUESTA']['SII:RESP_HDR']['ESTADO'] == '2':
             status = {'warning':{'title':_("Error code: 2"), 'message': _(resp['SII:RESPUESTA']['SII:RESP_HDR']['GLOSA'])}}
             return status
         if resp['SII:RESPUESTA']['SII:RESP_HDR']['ESTADO'] == "EPR":
-            sii_result = "Proceso"
+            sii_result = "Procesado"
             if resp['SII:RESPUESTA']['SII:RESP_BODY']['RECHAZADOS'] == "1":
                 sii_result = "Rechazado"
             if resp['SII:RESPUESTA']['SII:RESP_BODY']['REPARO'] == "1":
                 sii_result = "Reparo"
         elif resp['SII:RESPUESTA']['SII:RESP_HDR']['ESTADO'] == "FAU":
             sii_result = "Rechazado"
-        self.sii_cesion_result = result
+        #self.sii_cesion_result = result
 
     @api.multi
     def ask_for_cesion_dte_status(self):
@@ -508,13 +502,18 @@ version="1.0">
             raise UserError(str(e))
         if not self.sii_send_ident:
             raise UserError('No se ha enviado aún el documento, aún está en cola de envío interna en odoo')
+        #if self.sii_cesion_result == 'Cedido':
+        #    return self._get_datos_cesion_dte(
+        #        signature_d,
+        #        token,
+        #    )
         if self.sii_cesion_result == 'Enviado':
             status = self._get_cesion_send_status(
                 self.sii_cesion_send_ident,
                 signature_d,
                 token,
             )
-            if self.sii_cesion_result != 'Proceso':
+            if self.sii_cesion_result != 'Procesado':
                 return status
         return self._get_cesion_dte_status(signature_d, token)
 
