@@ -414,9 +414,10 @@ version="1.0">
         if resp['SII:RESPUESTA']['SII:RESP_HDR']['SII:ESTADO'] == '0':
             if resp['SII:RESPUESTA']['SII:RESP_BODY']['ESTADO_ENVIO'] in ["EPR", "EOK"]:
                 sii_result = "Procesado"
-            elif resp['SII:RESPUESTA']['SII:RESP_HDR']['SII:ESTADO'] in ["RCT", 'RDC']:
+            elif resp['SII:RESPUESTA']['SII:RESP_HDR']['SII:ESTADO'] in ["RCT", 'RDC'] or \
+                resp['SII:RESPUESTA']['SII:RESP_BODY']['ESTADO_ENVIO'] in ["RDC"]:
                 sii_result = "Rechazado"
-                status = {'warning':{'title':_('Error RCT'), 'message': _(resp['SII:RESPUESTA']['SII:RESP_HDR']['GLOSA'])}}
+                status = {'warning':{'title':_('Error RCT'), 'message': _(resp['SII:RESPUESTA']['SII:RESP_BODY']['DESC_ESTADO'])}}
         else:
             sii_result = "Rechazado"
             _logger.warning("rechazado %s" %resp)
