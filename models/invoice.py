@@ -353,7 +353,7 @@ version="1.0">
         for inv in self.with_context(lang='es_CL'):
             inv.sii_cesion_result = 'NoEnviado'
             inv.responsable_envio = self.env.user.id
-            if inv.type in ['out_invoice', 'out_refund']:
+            if inv.type in ['out_invoice' ] and inv.sii_document_class_id.sii_code in [ '33', '34']:
                 if inv.journal_id.restore_mode:
                     inv.sii_result = 'Proceso'
                 else:
@@ -380,7 +380,7 @@ version="1.0">
     def do_cesion_dte_send(self):
         ids = []
         for inv in self.with_context(lang='es_CL'):
-            if inv.sii_cesion_result in ['','NoEnviado','Rechazado']:
+            if inv.sii_cesion_result in ['','NoEnviado','Rechazado'] and inv.type in ['out_invoice' ] and inv.sii_document_class_id.sii_code in [ '33', '34']:
                 if inv.sii_cesion_result in ['Rechazado']:
                     inv._crear_envio_cesion()
                 inv.sii_cesion_result = 'EnCola'
