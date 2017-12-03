@@ -358,6 +358,7 @@ version="1.0">
                     inv.sii_result = 'Proceso'
                 else:
                     inv._crear_envio_cesion()
+                    inv.sii_cesion_result = 'EnCola'
                     self.env['sii.cola_envio'].create({
                                                 'doc_ids':[inv.id],
                                                 'model':'account.invoice',
