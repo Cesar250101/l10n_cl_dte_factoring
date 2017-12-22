@@ -1,11 +1,11 @@
 # -*- coding: utf-8 -*-
 {
-    "name": """Chile - Web Services Cesión de Documentos Tributarios Electrónicos\
+    "name": """Cesión de Créditos Electrónica para Chile (factoring)\
     """,
-    'version': '9.0.5.1.0',
+    'version': '11.0.5.1.0',
     'category': 'Localization/Chile',
     'sequence': 12,
-    'author':  'Daniel Santibáñez Polanco',
+    'author':  'Daniel Santibáñez Polanco, Cooperativa OdooCoop',
     'website': 'https://globalresponse.cl',
     'license': 'AGPL-3',
     'summary': '',
@@ -13,7 +13,7 @@
 Chile: Cesión de Documentos Tributarios.
 """,
     'depends': [
-        'l10n_cl_dte',
+        'l10n_cl_fe',
     ],
     'data': [
         'views/invoice_view.xml',
@@ -22,5 +22,5 @@ Chile: Cesión de Documentos Tributarios.
     ],
     'installable': True,
     'auto_install': False,
-    'application': False,
+    'application': True,
 }

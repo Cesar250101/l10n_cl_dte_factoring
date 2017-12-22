@@ -29,9 +29,9 @@ except ImportError:
     _logger.warning('Cannot import base64 library')
 
 try:
-    from SOAPpy import SOAPProxy
+    from suds.client import Client
 except ImportError:
-    _logger.warning('Cannot import SOOAPpy')
+    _logger.warning('Cannot import suds')
 
 server_url = {
     'SIIHOMO':'https://maullin.sii.cl/DTEWS/',
@@ -77,6 +77,9 @@ class CesionDTE(models.Model):
         copy=False,
         help="SII request result",
     )
+    sii_cesion_request = fields.Text(
+        string='SII XML Request',
+        copy=False)
     sii_cesion_receipt = fields.Text(
         string='SII XML Reception',
         copy=False)
@@ -213,9 +216,7 @@ version="1.0">
 
     @api.multi
     def get_cesion_xml_file(self):
-        filename = (self.document_number+'.xml').replace(' ','')
-        url_path = '/web/binary/download_document?model=account.invoice\
-&field=sii_xml_request&id=%s&filename=%s' % (self.id, filename)
+        url_path = '/download/xml/cesion/%s' % (self.id)
         return {
             'type' : 'ir.actions.act_url',
             'url': url_path,
@@ -304,7 +305,7 @@ version="1.0">
         data['UltimoVencimiento'] = self.date_invoice
         data['TmstCesion'] = self.time_stamp()
         xml = dicttoxml.dicttoxml(
-            {'item':data}, root=False, attr_type=False) \
+            {'item':data}, root=False, attr_type=False).decode() \
             .replace('<item>','').replace('</item>','')
         doc_cesion_xml =  self._crear_info_trans_elec_aec(xml, id)
         cesion_xml =  self._crear_info_cesion(doc_cesion_xml)
@@ -374,7 +375,7 @@ version="1.0">
                 'sii_xml_cesion_response':result['sii_xml_response'],
                 'sii_cesion_send_ident':result['sii_send_ident'],
                 'sii_cesion_result': result['sii_result'],
-                'sii_xml_request':envio_dte,
+                'sii_cesion_request':envio_dte,
                 })
 
     @api.multi
@@ -396,10 +397,9 @@ version="1.0">
 
     def _get_cesion_send_status(self, track_id, signature_d,token):
         url = server_url[self.company_id.dte_service_provider] + 'services/wsRPETCConsulta?wsdl'
-        ns = 'urn:'+ server_url[self.company_id.dte_service_provider] + 'services/wsRPETCConsulta'
-        _server = SOAPProxy(url, ns)
+        _server = Client(url)
         rut = self.format_vat(self.company_id.vat, con_cero=True)
-        respuesta = _server.getEstEnvio(
+        respuesta = _server.service.getEstEnvio(
             token,
             track_id,
         )
@@ -429,10 +429,9 @@ version="1.0">
 
     def _get_cesion_dte_status(self, signature_d, token):
         url = server_url[self.company_id.dte_service_provider] + 'services/wsRPETCConsulta?wsdl'
-        ns = 'urn:'+ server_url[self.company_id.dte_service_provider] + 'services/wsRPETCConsulta'
-        _server = SOAPProxy(url, ns)
+        _server = Client(url)
         rut = signature_d['subject_serial_number']
-        respuesta = _server.getEstCesion(
+        respuesta = _server.service.getEstCesion(
             token,
             rut[:8],
             str(rut[-1]),
@@ -455,11 +454,10 @@ version="1.0">
 
     def _get_datos_cesion_dte(self, signature_d, token):
         url = server_url[self.company_id.dte_service_provider] + 'services/wsRPETCConsulta?wsdl'
-        ns = 'urn:'+ server_url[self.company_id.dte_service_provider] + 'services/wsRPETCConsulta?wsdl'
-        _server = SOAPProxy(url, ns)
+        _server = Client(url)
         rut = signature_d['subject_serial_number']
         tenedor_rut = self.company_id.vat if self.sii_cesion_result == 'Cedido' else self.cesionario_id.vat
-        respuesta = _server.getEstCesionRelac(
+        respuesta = _server.service.getEstCesionRelac(
             token,
             rut[:8],
             str(rut[-1]),
