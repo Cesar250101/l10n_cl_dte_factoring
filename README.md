@@ -1,5 +1,6 @@
-# l10n_cl_dte
+# l10n_cl_dte_factoring
 
-Se crea este repositorio, para dar un enfoque de firma electrónica directa con el SII.
+Envío de Cesión de créditos de documentos electrónicos para factoring en el SII
 
- Originalmente Creado por github.com/odoo-chile/l10n_cl_dte  , pero tenía un enfoque general y todo lo relacionado a Facuración directa estaba a medio hacer.
+Estado Actual:
+No Probado en la versión 11.0, solamente portado. Se necesitan testers
