@@ -27,6 +27,7 @@
                                 <field name="invoice_id" invisible="True" />
                               </tree>
                             </field>
+                            <field name='sii_cesion_request' readonly="True"/>
                             <field name='sii_cesion_receipt' readonly="True"/>
                             <field name='sii_cesion_message' readonly="True"/>
                         </group>

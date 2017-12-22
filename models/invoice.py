@@ -77,6 +77,10 @@ class CesionDTE(models.Model):
         copy=False,
         help="SII request result",
     )
+    sii_cesion_request = fields.Text(
+            string='SII XML Reception',
+            copy=False,
+        )
     sii_cesion_receipt = fields.Text(
         string='SII XML Reception',
         copy=False)
@@ -215,7 +219,7 @@ version="1.0">
     def get_cesion_xml_file(self):
         filename = (self.document_number+'.xml').replace(' ','')
         url_path = '/web/binary/download_document?model=account.invoice\
-&field=sii_xml_request&id=%s&filename=%s' % (self.id, filename)
+&field=sii_cesion_request&id=%s&filename=%s' % (self.id, filename)
         return {
             'type' : 'ir.actions.act_url',
             'url': url_path,
@@ -374,7 +378,7 @@ version="1.0">
                 'sii_xml_cesion_response':result['sii_xml_response'],
                 'sii_cesion_send_ident':result['sii_send_ident'],
                 'sii_cesion_result': result['sii_result'],
-                'sii_xml_request':envio_dte,
+                'sii_cesion_request':envio_dte,
                 })
 
     @api.multi
