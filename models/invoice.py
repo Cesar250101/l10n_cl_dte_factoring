@@ -256,7 +256,7 @@ version="1.0">
         IdDoc['RUTReceptor'] = self.format_vat(self.partner_id.commercial_partner_id.vat)
         IdDoc['Folio'] = self.get_folio()
         IdDoc['FchEmis'] = self.date_invoice
-        IdDoc['MntTotal'] = int(round(self.amount_total, 0))
+        IdDoc['MntTotal'] = self.currency_id.round(self.amount_total)
         return IdDoc
 
     def _cedente(self):
@@ -295,7 +295,7 @@ version="1.0">
         return dte_cedido
 
     def _monto_cesion(self):
-        return int(round(self.amount_total, 0))
+        return self.currency_id.round(self.amount_total)
 
     def _cesion(self, certp, priv_key):
         id = 'CesDoc1'
