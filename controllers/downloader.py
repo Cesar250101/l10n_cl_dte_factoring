@@ -9,4 +9,4 @@ class Binary(downloader.Binary):
     def download_cesion(self, rec_id, **post):
         filename = ('CES_%s_%s.xml' % (rec_id.sii_document_class_id.sii_code, rec_id.sii_document_number)).replace(' ','_')
         filecontent = rec_id.sii_cesion_request
-        return document(filename, filecontent)
+        return self.document(filename, filecontent)
