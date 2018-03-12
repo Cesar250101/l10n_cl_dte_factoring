@@ -2,7 +2,7 @@
 {
     "name": """Chile - Web Services Cesión de Documentos Tributarios Electrónicos\
     """,
-    'version': '9.0.5.2.1',
+    'version': '1.0.0',
     'category': 'Localization/Chile',
     'sequence': 12,
     'author':  'Daniel Santibáñez Polanco',
@@ -22,5 +22,5 @@ Chile: Cesión de Documentos Tributarios.
     ],
     'installable': True,
     'auto_install': False,
-    'application': False,
+    'application': True,
 }
