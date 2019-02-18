@@ -375,7 +375,7 @@ version="1.0">
                                     'tipo_trabajo': 'cesion',
                                     })
 
-    def _get_cesion_send_status(self, track_id, signature_d,token):
+    def _get_cesion_send_status(self, track_id, token):
         url = server_url[self.company_id.dte_service_provider] + 'services/wsRPETCConsulta?wsdl'
         _server = Client(url)
         rut = self.format_vat(self.company_id.vat, con_cero=True)
@@ -407,10 +407,9 @@ version="1.0">
             self.sii_cesion_result = sii_result
         return status
 
-    def _get_cesion_dte_status(self, signature_d, token):
+    def _get_cesion_dte_status(self, rut, token):
         url = server_url[self.company_id.dte_service_provider] + 'services/wsRPETCConsulta?wsdl'
         _server = Client(url)
-        rut = signature_d['subject_serial_number']
         respuesta = _server.service.getEstCesion(
             token,
             rut[:8],
@@ -432,10 +431,9 @@ version="1.0">
         self.sii_cesion_result = sii_result
         return status
 
-    def _get_datos_cesion_dte(self, signature_d, token):
+    def _get_datos_cesion_dte(self, rut, token):
         url = server_url[self.company_id.dte_service_provider] + 'services/wsRPETCConsulta?wsdl'
         _server = Client(url)
-        rut = signature_d['subject_serial_number']
         tenedor_rut = self.company_id.vat if self.sii_cesion_result == 'Cedido' else self.cesionario_id.vat
         respuesta = _server.service.getEstCesionRelac(
             token,
@@ -465,23 +463,22 @@ version="1.0">
     @api.multi
     def ask_for_cesion_dte_status(self):
         token = self.sii_cesion_request.get_token(self.env.user, self.company_id)
-        signature_d = self.env.user.get_digital_signature(self.company_id)
+        signature_id = self.env.user.get_digital_signature(self.company_id)
         if not self.sii_cesion_request.sii_send_ident:
             raise UserError('No se ha enviado aún el documento, aún está en cola de envío interna en odoo')
         #if self.sii_cesion_result == 'Cedido':
         #    return self._get_datos_cesion_dte(
-        #        signature_d,
+        #        signature_id.subject_serial_number,
         #        token,
         #    )
         if self.sii_cesion_result == 'Enviado':
             status = self._get_cesion_send_status(
                 self.sii_cesion_send_ident,
-                signature_d,
                 token,
             )
             if self.sii_cesion_result != 'Procesado':
                 return status
-        return self._get_cesion_dte_status(signature_d, token)
+        return self._get_cesion_dte_status(signature_id.subject_serial_number, token)
 
 class CesionDTEAR(models.Model):
     _name = 'account.invoice.imagen_ar'
