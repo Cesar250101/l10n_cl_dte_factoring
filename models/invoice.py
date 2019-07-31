@@ -103,7 +103,6 @@ entregados por parte del deudor de la factura {4}, RUT {5}, de acuerdo a lo esta
                 self.format_vat(self.commercial_partner_id.vat),
             )
             self.declaracion_jurada = declaracion_jurada
-        return xsd_types
 
     def _caratula_aec(self, cesiones):
         xml = '''<DocumentoAEC ID="Doc1">
