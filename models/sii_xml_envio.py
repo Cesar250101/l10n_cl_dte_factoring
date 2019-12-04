@@ -73,14 +73,15 @@ class SIIXMLEnvio(models.Model):
         if resp.find('RESP_HDR/ESTADO').text == '0':
             if resp.find('RESP_BODY/ESTADO_ENVIO').text in ["EPR", "EOK"]:
                 sii_result = "Procesado"
+                self.state = "Aceptado"
             elif resp.find('RESP_HDR/ESTADO').text in ["RCT", 'RDC'] or \
                 resp.find('RESP_BODY/ESTADO_ENVIO').text in ["RDC"]:
                 sii_result = "Rechazado"
+                self.state = "Rechazado"
                 status = {'warning':{'title':_('Error RCT'), 'message': _(resp.find('RESP_BODY/DESC_ESTADO').text)}}
         else:
             sii_result = "Rechazado"
             _logger.warning("rechazado %s" %resp)
             status = {'warning':{'title':_('Error RCT'), 'message': _(resp.find('RESP_BODY/DESC_ESTADO').text)}}
-        if sii_result:
-            self.sii_cesion_result = sii_result
+            self.state = "Rechazado"
         return status
