@@ -52,7 +52,6 @@ class CesionDTE(models.Model):
         ('Reparo', 'Reparo'),
         ('Procesado', 'Procesado'),
         ('Cedido', 'Cedido'),
-        ('Reenviar', 'Reenviar'),
         ('Anulado', 'Anulado')],
         string='Resultado Cesion',
         copy=False,
@@ -241,10 +240,12 @@ entregados por parte del deudor de la factura {4}, RUT {5}, de acuerdo a lo esta
             .replace(' xmlns="http://www.sii.cl/XMLSchema"', ''))
         sii_result = 'Procesado'
         status = False
-        if resp.find('RESP_HDR/ESTADO').text in ['2', '-13']:
+        if resp.find('RESP_HDR/ESTADO').text in ['-13']:
             status = {'warning':{'title':_("Error code: 2"), 'message': _(resp.find('RESP_HDR/GLOSA').text)}}
             sii_result = "Rechazado"
-        if resp.find('RESP_HDR/ESTADO').text == "0":
+        elif resp.find('RESP_HDR/ESTADO').text in ['2']:
+            sii_result = "Aceptado"
+        elif resp.find('RESP_HDR/ESTADO').text == "0":
             sii_result = "Cedido"
         elif resp.find('RESP_HDR/ESTADO').text == "FAU":
             sii_result = "Rechazado"
@@ -296,9 +297,13 @@ entregados por parte del deudor de la factura {4}, RUT {5}, de acuerdo a lo esta
         #    )
         if self.sii_cesion_request and self.sii_cesion_request.state == 'Enviado':
             status = self.sii_cesion_request.get_cesion_send_status()
-            if self.sii_cesion_result != 'Procesado':
+            if self.sii_cesion_request.state != 'Aceptado':
                 return status
-        return self._get_cesion_dte_status(signature_id.subject_serial_number, token)
+        self.sii_cesion_result = self.sii_cesion_request.state
+        try:
+            return self._get_cesion_dte_status(signature_id.subject_serial_number, token)
+        except:
+            pass
 
 class CesionDTEAR(models.Model):
     _name = 'account.invoice.imagen_ar'
