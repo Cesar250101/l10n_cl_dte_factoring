@@ -193,7 +193,7 @@ entregados por parte del deudor de la factura {4}, RUT {5}, de acuerdo a lo esta
             envio_id = self.env['sii.xml.envio'].create(envio)
             for r in self:
                 r.sii_cesion_request = envio_id.id
-                r.sii_cesion_result = result['sii_result']
+                r.sii_cesion_result = result['status']
         return self[0].sii_cesion_request
 
     @api.multi
