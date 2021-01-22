@@ -24,7 +24,7 @@ server_url = {
 
 
 class CesionDTE(models.Model):
-    _inherit = "account.invoice"
+    _inherit = "account.move"
 
     cesion_number = fields.Integer(
         copy=False,
@@ -69,8 +69,8 @@ class CesionDTE(models.Model):
         string='SII XML Response',
         copy=False)
     imagen_ar_ids = fields.One2many(
-        'account.invoice.imagen_ar',
-        'invoice_id',
+        'account.move.imagen_ar',
+        'move_id',
         string="Imagenes de acuse de recibo",
     )
 
@@ -89,7 +89,6 @@ entregados por parte del deudor de la factura {4}, RUT {5}, de acuerdo a lo esta
             )
             self.declaracion_jurada = declaracion_jurada
 
-    @api.multi
     def get_cesion_xml_file(self):
         url_path = '/download/xml/cesion/%s' % (self.id)
         return {
@@ -153,7 +152,6 @@ entregados por parte del deudor de la factura {4}, RUT {5}, de acuerdo a lo esta
         datos['Cesion'] = self._cesion()
         return datos
 
-    @api.multi
     def validate_cesion(self):
         for inv in self.with_context(lang='es_CL'):
             inv.sii_cesion_result = 'NoEnviado'
@@ -168,12 +166,11 @@ entregados por parte del deudor de la factura {4}, RUT {5}, de acuerdo a lo esta
                     self.env['sii.cola_envio'].create({
                                             'company_id': inv.company_id.id,
                                             'doc_ids': [inv.id],
-                                            'model': 'account.invoice',
+                                            'model': 'account.move',
                                             'user_id': self.env.uid,
                                             'tipo_trabajo': 'cesion',
                                             })
 
-    @api.multi
     def cesion_dte_send(self):
         if 1 == 1:#not self[0].sii_cesion_request or self[0].sii_cesion_result in ['Rechazado'] :
             for r in self:
@@ -196,7 +193,6 @@ entregados por parte del deudor de la factura {4}, RUT {5}, de acuerdo a lo esta
                 r.sii_cesion_result = result['status']
         return self[0].sii_cesion_request
 
-    @api.multi
     def do_cesion_dte_send(self):
         ids = []
         for inv in self.with_context(lang='es_CL'):
@@ -209,7 +205,7 @@ entregados por parte del deudor de la factura {4}, RUT {5}, de acuerdo a lo esta
             self.env['sii.cola_envio'].create({
                                     'company_id': self[0].company_id.id,
                                     'doc_ids': ids,
-                                    'model': 'account.invoice',
+                                    'model': 'account.move',
                                     'user_id': self.env.user.id,
                                     'tipo_trabajo': 'cesion',
                                     })
@@ -274,7 +270,6 @@ entregados por parte del deudor de la factura {4}, RUT {5}, de acuerdo a lo esta
             sii_result = "Rechazado"
         #self.sii_cesion_result = result
 
-    @api.multi
     def ask_for_cesion_dte_status(self):
         if not self.sii_cesion_request.sii_send_ident:
             raise UserError('No se ha enviado aún el documento, aún está en cola de envío interna en odoo')
@@ -294,7 +289,7 @@ entregados por parte del deudor de la factura {4}, RUT {5}, de acuerdo a lo esta
             pass
 
 class CesionDTEAR(models.Model):
-    _name = 'account.invoice.imagen_ar'
+    _name = 'account.move.imagen_ar'
 
     name = fields.Char(
         string='File Name',
@@ -305,7 +300,7 @@ class CesionDTEAR(models.Model):
         store=True,
         help='Upload Image',
     )
-    invoice_id = fields.Many2one(
-        'account.invoice',
+    move_id = fields.Many2one(
+        'account.move',
         string="Factura",
     )

@@ -16,7 +16,7 @@ Chile: Cesión de Documentos Tributarios.
         'l10n_cl_fe',
     ],
     'data': [
-        'views/invoice_view.xml',
+        'views/account_move_view.xml',
         #'views/partner_view.xml',
         'security/ir.model.access.csv',
     ],
