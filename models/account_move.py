@@ -288,6 +288,7 @@ entregados por parte del deudor de la factura {4}, RUT {5}, de acuerdo a lo esta
         except:
             pass
 
+
 class CesionDTEAR(models.Model):
     _name = 'account.move.imagen_ar'
 

@@ -13,7 +13,8 @@ class ColaEnvio(models.Model):
         selection_add=[
             ('cesion','Cesion'),
             ('cesion_consulta','Consulta Cesion')
-        ]
+        ],
+        ondelete={'cesion': 'set null', 'cesion_consulta': 'set null'}
     )
 
     def _procesar_tipo_trabajo(self):
